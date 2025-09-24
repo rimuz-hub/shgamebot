@@ -79,6 +79,7 @@ async def send_embed(ctx,title,desc,color=discord.Color.green()):
     embed=discord.Embed(title=title,description=desc,color=color)
     await ctx.send(embed=embed)
 
+
 # -----------------------------
 # Economy commands
 # -----------------------------
@@ -129,6 +130,96 @@ async def give(ctx,user:discord.Member,amount:int):
         return
     add_balance(user.id,amount)
     await send_embed(ctx,"💰 Admin Give",f"{ctx.author.mention} gave **${amount}** to {user.mention}")
+
+# -----------------------------
+# Card Battle 1v1
+# -----------------------------
+class CardBattleButton(Button):
+    def __init__(self, card_index, game_view):
+        super().__init__(label=f"Card {card_index+1}", style=discord.ButtonStyle.primary)
+        self.card_index = card_index
+        self.game_view = game_view
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.game_view.current:
+            await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
+            return
+
+        # Player picks card
+        card = self.game_view.get_player_cards(self.game_view.current)[self.card_index]
+        self.game_view.selections[self.game_view.current.id] = card
+
+        # Switch turn
+        if self.game_view.current == self.game_view.p1:
+            self.game_view.current = self.game_view.p2
+            await interaction.response.edit_message(content=f"🃏 {self.game_view.current.mention}, it's your turn!", view=self.game_view)
+        else:
+            # Both picked, calculate winner
+            p1_card = self.game_view.selections[self.game_view.p1.id]
+            p2_card = self.game_view.selections[self.game_view.p2.id]
+
+            p1_score = p1_card['attack'] + p1_card['defense']
+            p2_score = p2_card['attack'] + p2_card['defense']
+
+            if p1_score > p2_score:
+                winner = self.game_view.p1
+                loser = self.game_view.p2
+            elif p2_score > p1_score:
+                winner = self.game_view.p2
+                loser = self.game_view.p1
+            else:
+                winner = None
+
+            if winner:
+                # Reward winner
+                add_balance(winner.id, 100)
+                add_balance(loser.id, -50)
+                result_msg = f"🎉 {winner.mention} wins!\n{self.game_view.p1.mention} played **{p1_card['name']}** (ATK:{p1_card['attack']} DEF:{p1_card['defense']})\n{self.game_view.p2.mention} played **{p2_card['name']}** (ATK:{p2_card['attack']} DEF:{p2_card['defense']})"
+            else:
+                result_msg = f"🤝 It's a tie!\n{self.game_view.p1.mention} played **{p1_card['name']}**\n{self.game_view.p2.mention} played **{p2_card['name']}**"
+
+            for child in self.game_view.children:
+                child.disabled = True
+            await interaction.response.edit_message(content=result_msg, view=self.game_view)
+            self.game_view.stop()
+
+class CardBattleView(View):
+    def __init__(self, p1, p2):
+        super().__init__(timeout=120)
+        self.p1 = p1
+        self.p2 = p2
+        self.current = p1
+        self.selections = {}  # user.id -> card
+
+        # Add buttons dynamically for p1's cards first
+        for idx, card in enumerate(get_cards(self.current.id)):
+            self.add_item(CardBattleButton(idx, self))
+
+    def get_player_cards(self, player):
+        return get_cards(player.id)
+
+    async def update_buttons(self):
+        # Clear old buttons
+        for child in self.children:
+            child.disabled = True
+        self.clear_items()
+        # Add buttons for current player
+        cards = self.get_player_cards(self.current)
+        for idx, card in enumerate(cards):
+            self.add_item(CardBattleButton(idx, self))
+
+# Command to start card battle
+@bot.command()
+async def cardbattle(ctx, opponent: discord.Member):
+    if opponent == ctx.author:
+        await ctx.send("❌ You cannot play yourself!")
+        return
+    if len(get_cards(ctx.author.id)) == 0 or len(get_cards(opponent.id)) == 0:
+        await ctx.send("❌ Both players must have at least 1 card!")
+        return
+
+    view = CardBattleView(ctx.author, opponent)
+    await ctx.send(f"🃏 Card Battle: {ctx.author.mention} vs {opponent.mention}\n{ctx.author.mention} goes first!", view=view)
 
 # -----------------------------
 # Mini-games: Coinflip/Dice/Slots/Roulette
@@ -531,6 +622,7 @@ async def cmds(ctx):
         "?mypets - Show your pets",
         "?collect - Collect a pet (5 min cooldown)",
         "",
+        "?cardbattle @opponent - Challenge another user to a 1v1 card battle using your collected cards",
         "Sincerely, Plat"
     ]
     embed.description="\n".join(cmds_list)
