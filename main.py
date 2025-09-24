@@ -180,12 +180,25 @@ async def pay(ctx, member: discord.Member, amount: int):
     await send_embed(ctx, "💸 Payment", f"{ctx.author.mention} paid **${amount}** to {member.mention}")
 
 @bot.command()
-@commands.has_guild_permissions(administrator=True)
+@has_role("Admin")  # only members with "Admin" role can use this
 async def give(ctx, member: discord.Member, amount: int):
     if amount <= 0:
-        await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red()); return
+        await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
+        return
     await add_balance(member.id, amount)
     await send_embed(ctx, "💰 Admin Give", f"{ctx.author.mention} gave **${amount}** to {member.mention}")
+
+@bot.command()
+@has_role("Admin")
+async def remove(ctx, user: discord.Member, amount: int):
+    if amount <= 0:
+        await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
+        return
+    bal = get_balance(user.id)
+    if amount > bal:
+        amount = bal
+    await add_balance(user.id, -amount)
+    await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
 
 # ---------------- CASINO GAMES ----------------
 @bot.command()
@@ -649,26 +662,6 @@ class AdvancedBattleView(View):
             self.add_item(btn)
         embed = self.create_embed(f"Turn: {self.current.mention}. Choose a card to act with.")
         await interaction.response.edit_message(embed=embed, view=self)
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def remove(ctx, user: discord.Member, amount: int):
-    if amount <= 0:
-        await ctx.send("❌ Amount must be greater than 0")
-        return
-
-    user_id = str(user.id)
-    current = balances.get(user_id, 0)
-
-    if current <= 0:
-        await ctx.send(f"❌ {user.display_name} has no balance to remove")
-        return
-
-    remove_amt = min(amount, current)
-    balances[user_id] = current - remove_amt
-    save_json(BALANCES_FILE, balances)
-    await ctx.send(f"✅ Removed **${remove_amt}** from {user.display_name}. New balance: **${balances[user_id]}**")
-
 
 @bot.command()
 async def leaderboard(ctx, top:int=10):
