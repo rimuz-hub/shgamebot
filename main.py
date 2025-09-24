@@ -209,6 +209,63 @@ async def remove(ctx, user: discord.Member, amount: int):
     await add_balance(user.id, -amount)
     await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
 
+# ---------------- CARD TRADING ----------------
+from discord.ext.commands import Context
+
+# Active trades in memory
+active_trades = {}  # key: (from_id, to_id), value: card index
+
+@bot.command()
+async def trade(ctx, member: discord.Member, card_index: int):
+    """Propose a card trade to another member."""
+    uid_from = ctx.author.id
+    uid_to = member.id
+    cards_from = get_cards(uid_from)
+    
+    if card_index < 1 or card_index > len(cards_from):
+        await ctx.send("❌ Invalid card index.")
+        return
+
+    card = cards_from[card_index - 1]
+
+    # Store trade offer
+    active_trades[(uid_from, uid_to)] = card_index - 1
+    await ctx.send(f"💌 {member.mention}, {ctx.author.display_name} wants to trade **{card['name']}** with you. "
+                   f"Type `?accept {ctx.author.id}` to accept or `?decline {ctx.author.id}` to decline.")
+
+@bot.command()
+async def accept(ctx, from_id: int):
+    uid_to = ctx.author.id
+    trade_key = (from_id, uid_to)
+
+    if trade_key not in active_trades:
+        await ctx.send("❌ No trade offer from that user.")
+        return
+
+    # Get card to trade
+    card_index = active_trades.pop(trade_key)
+    card = get_cards(from_id)[card_index]
+
+    # Remove card from sender, add to recipient
+    await remove_card_by_obj(from_id, card)
+    await add_card(uid_to, card)
+
+    from_user = ctx.guild.get_member(from_id)
+    await ctx.send(f"✅ {ctx.author.mention} accepted the trade! **{card['name']}** has been transferred from {from_user.display_name}.")
+
+@bot.command()
+async def decline(ctx, from_id: int):
+    uid_to = ctx.author.id
+    trade_key = (from_id, uid_to)
+
+    if trade_key not in active_trades:
+        await ctx.send("❌ No trade offer from that user.")
+        return
+
+    active_trades.pop(trade_key)
+    from_user = ctx.guild.get_member(from_id)
+    await ctx.send(f"❌ {ctx.author.mention} declined the trade from {from_user.display_name}.")
+
 # ---------------- CASINO GAMES ----------------
 @bot.command()
 async def cf(ctx, bet: int, choice: str):
