@@ -661,7 +661,6 @@ async def remove(ctx, user: discord.Member, amount: int):
         amount = bal  # prevent negative balance
     add_balance(user.id, -amount)
     await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
-`
 
 @bot.command()
 async def leaderboard(ctx, top:int=10):
