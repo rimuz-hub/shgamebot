@@ -132,14 +132,11 @@ async def give(ctx,user:discord.Member,amount:int):
     await send_embed(ctx,"💰 Admin Give",f"{ctx.author.mention} gave **${amount}** to {user.mention}")
 
 # -----------------------------
-# Card Battle 1v1
+# Advanced Card Battle 1v1
 # -----------------------------
-# -----------------------------
-# Card Battle 1v1
-# -----------------------------
-class CardBattleButton(Button):
-    def __init__(self, action, game_view):
-        super().__init__(label=action, style=discord.ButtonStyle.primary)
+class CardActionButton(Button):
+    def __init__(self, label, action, game_view):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
         self.action = action
         self.game_view = game_view
 
@@ -150,23 +147,34 @@ class CardBattleButton(Button):
 
         attacker = self.game_view.current
         defender = self.game_view.p2 if self.game_view.current == self.game_view.p1 else self.game_view.p1
-        attacker_card = self.game_view.cards[attacker.id]
-        defender_card = self.game_view.cards[defender.id]
 
-        # Simple attack mechanic: damage = attacker's ATK - defender DEF (min 0)
-        damage = max(attacker_card['attack'] - defender_card['defense'], 0)
-        self.game_view.hp[defender.id] -= damage
-        self.game_view.log.append(f"🗡️ {attacker.display_name}'s {attacker_card['name']} dealt {damage} damage to {defender.display_name}'s {defender_card['name']}!")
+        # Choose the first alive card for each player
+        attacker_card = next(c for c in self.game_view.cards[attacker.id] if c['hp']>0)
+        defender_card = next(c for c in self.game_view.cards[defender.id] if c['hp']>0)
 
-        # Check if defender is defeated
-        if self.game_view.hp[defender.id] <= 0:
+        if self.action == "Attack":
+            # Damage: attacker's ATK - defender DEF
+            damage = max(attacker_card['attack'] - defender_card['defense'], 0)
+            if self.game_view.last_action.get(defender.id) == "Defend":
+                damage //= 2
+            defender_card['hp'] -= damage
+            self.game_view.log.append(f"🗡️ {attacker.display_name}'s {attacker_card['name']} dealt {damage} to {defender.display_name}'s {defender_card['name']}")
+        elif self.action == "Defend":
+            self.game_view.last_action[attacker.id] = "Defend"
+            self.game_view.log.append(f"🛡️ {attacker.display_name} is defending this turn")
+
+        # Reset last action if attack
+        if self.action == "Attack":
+            self.game_view.last_action[attacker.id] = None
+
+        # Check for win
+        if all(c['hp'] <=0 for c in self.game_view.cards[defender.id]):
             embed = discord.Embed(title="🏆 Card Battle Finished!", color=discord.Color.green())
             embed.add_field(name="Winner", value=attacker.mention)
             embed.add_field(name="Battle Log", value="\n".join(self.game_view.log), inline=False)
             for child in self.game_view.children:
                 child.disabled = True
             await interaction.response.edit_message(embed=embed, view=self.game_view)
-            # Winner earns coins
             add_balance(attacker.id, 200)
             add_balance(defender.id, -100)
             self.game_view.stop()
@@ -176,43 +184,48 @@ class CardBattleButton(Button):
         self.game_view.current = defender
         await self.game_view.update_message(interaction)
 
-class CardBattleView(View):
-    def __init__(self, ctx, p1, p2):
+class AdvancedCardBattleView(View):
+    def __init__(self, ctx, p1, p2, num_cards=3):
         super().__init__(timeout=180)
         self.ctx = ctx
         self.p1 = p1
         self.p2 = p2
         self.current = p1
-        self.cards = {
-            p1.id: random.choice(get_cards(p1.id)) if get_cards(p1.id) else random.choice(CARD_POOL),
-            p2.id: random.choice(get_cards(p2.id)) if get_cards(p2.id) else random.choice(CARD_POOL)
-        }
-        self.hp = {p1.id: 100, p2.id: 100}
-        self.log = []
+        self.num_cards = num_cards
 
-        # Actions
-        self.add_item(CardBattleButton("Attack", self))
+        # Initialize each player's cards
+        self.cards = {
+            p1.id: [dict(c, hp=50) for c in (get_cards(p1.id)[:num_cards] or random.sample(CARD_POOL, num_cards))],
+            p2.id: [dict(c, hp=50) for c in (get_cards(p2.id)[:num_cards] or random.sample(CARD_POOL, num_cards))]
+        }
+        self.log = []
+        self.last_action = {p1.id: None, p2.id: None}
+
+        # Add action buttons
+        self.add_item(CardActionButton("Attack", "Attack", self))
+        self.add_item(CardActionButton("Defend", "Defend", self))
 
     async def update_message(self, interaction=None):
         embed = discord.Embed(title="⚔️ Card Battle", color=discord.Color.blue())
         for player in [self.p1, self.p2]:
-            card = self.cards[player.id]
-            embed.add_field(name=f"{player.display_name} ({self.hp[player.id]} HP)",
-                            value=f"{card['name']} ATK:{card['attack']} DEF:{card['defense']}", inline=False)
-        embed.set_footer(text=f"Turn: {self.current.display_name}\nUse 'Attack' button!")
+            desc = ""
+            for c in self.cards[player.id]:
+                desc += f"{c['name']} ATK:{c['attack']} DEF:{c['defense']} HP:{c['hp']}\n"
+            embed.add_field(name=f"{player.display_name}", value=desc, inline=False)
+        embed.set_footer(text=f"Turn: {self.current.display_name}\nUse buttons to Attack or Defend")
         if interaction:
             await interaction.response.edit_message(embed=embed, view=self)
         else:
             self.msg = await self.ctx.send(embed=embed, view=self)
 
-# Command to start card battle
 @bot.command()
 async def cardbattle(ctx, opponent: discord.Member):
     if opponent == ctx.author:
         await ctx.send("❌ You cannot battle yourself!")
         return
-    view = CardBattleView(ctx, ctx.author, opponent)
+    view = AdvancedCardBattleView(ctx, ctx.author, opponent)
     await view.update_message()
+
 
 # -----------------------------
 # Mini-games: Coinflip/Dice/Slots/Roulette
