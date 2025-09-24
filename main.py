@@ -266,6 +266,45 @@ async def decline(ctx, from_id: int):
     from_user = ctx.guild.get_member(from_id)
     await ctx.send(f"❌ {ctx.author.mention} declined the trade from {from_user.display_name}.")
 
+# ---------------- ADMIN CARD GIVE ----------------
+from discord.ext import commands
+
+ADMIN_ROLE_ID = 1343891987350294631
+
+@bot.command()
+async def card(ctx, action: str, member: discord.Member, *, cardname: str = None):
+    """Admin card management: give a card to a user."""
+    # Check if user has the required role
+    role = discord.utils.get(ctx.author.roles, id=ADMIN_ROLE_ID)
+    if not role:
+        await ctx.send("❌ You don't have permission to use this command.")
+        return
+
+    if action.lower() != "give":
+        await ctx.send("❌ Invalid action. Use `?card give @user cardname`")
+        return
+
+    if not cardname:
+        await ctx.send("❌ Please specify a card name.")
+        return
+
+    # Find the card in the pool (case-insensitive)
+    template = next((c for c in CARD_POOL if c["name"].lower() == cardname.lower()), None)
+    if not template:
+        await ctx.send(f"❌ No card named `{cardname}` found in the card pool.")
+        return
+
+    # Create an instance for the user
+    owned = {
+        "name": template["name"],
+        "atk": template["atk"],
+        "def": template["def"],
+        "hp": random.randint(40, 80),
+        "temp_def": 0
+    }
+    await add_card(member.id, owned)
+    await ctx.send(f"✅ {ctx.author.mention} gave **{owned['name']}** to {member.mention}.")
+
 # ---------------- CASINO GAMES ----------------
 @bot.command()
 async def cf(ctx, bet: int, choice: str):
