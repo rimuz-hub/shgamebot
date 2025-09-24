@@ -650,6 +650,19 @@ class AdvancedBattleView(View):
         embed = self.create_embed(f"Turn: {self.current.mention}. Choose a card to act with.")
         await interaction.response.edit_message(embed=embed, view=self)
 
+@bot.command()
+@commands.has_permissions(manage_guild=True)
+async def remove(ctx, user: discord.Member, amount: int):
+    if amount <= 0:
+        await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
+        return
+    bal = get_balance(user.id)
+    if amount > bal:
+        amount = bal  # prevent negative balance
+    add_balance(user.id, -amount)
+    await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
+`
+
 # command to start a card battle
 @bot.command()
 async def cardbattle(ctx, opponent: discord.Member):
