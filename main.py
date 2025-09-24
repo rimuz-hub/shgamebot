@@ -210,61 +210,62 @@ async def remove(ctx, user: discord.Member, amount: int):
     await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
 
 # ---------------- CARD TRADING ----------------
-from discord.ext.commands import Context
-
-# Active trades in memory
-active_trades = {}  # key: (from_id, to_id), value: card index
+# ---------------- CARD TRADING ----------------
+pending_trades: Dict[int, Dict[str, Any]] = {}  # recipient_id -> {from_id, card_name}
 
 @bot.command()
-async def trade(ctx, member: discord.Member, card_index: int):
-    """Propose a card trade to another member."""
-    uid_from = ctx.author.id
-    uid_to = member.id
-    cards_from = get_cards(uid_from)
-    
-    if card_index < 1 or card_index > len(cards_from):
-        await ctx.send("❌ Invalid card index.")
+async def card_give(ctx, member: discord.Member, *, card_name: str):
+    """Propose a card trade to another member (recipient must use ?accept)."""
+    giver_id = ctx.author.id
+    recipient_id = member.id
+
+    if giver_id == recipient_id:
+        await ctx.send("❌ You cannot trade with yourself.")
         return
 
-    card = cards_from[card_index - 1]
+    # check card exists in giver's collection
+    cards = get_cards(giver_id)
+    card = next((c for c in cards if c["name"].lower() == card_name.lower()), None)
+    if not card:
+        await ctx.send(f"❌ You don't own a card named `{card_name}`")
+        return
 
-    # Store trade offer
-    active_trades[(uid_from, uid_to)] = card_index - 1
-    await ctx.send(f"💌 {member.mention}, {ctx.author.display_name} wants to trade **{card['name']}** with you. "
-                   f"Type `?accept {ctx.author.id}` to accept or `?decline {ctx.author.id}` to decline.")
+    # register pending trade
+    pending_trades[recipient_id] = {"from_id": giver_id, "card_name": card["name"]}
+    await ctx.send(f"📨 {member.mention}, {ctx.author.display_name} wants to give you **{card['name']}**! Type `?accept` to receive it.")
 
 @bot.command()
-async def accept(ctx, from_id: int):
-    uid_to = ctx.author.id
-    trade_key = (from_id, uid_to)
-
-    if trade_key not in active_trades:
-        await ctx.send("❌ No trade offer from that user.")
+async def accept(ctx):
+    """Accept a pending card trade."""
+    recipient_id = ctx.author.id
+    trade = pending_trades.get(recipient_id)
+    if not trade:
+        await ctx.send("❌ You have no pending trades.")
         return
 
-    # Get card to trade
-    card_index = active_trades.pop(trade_key)
-    card = get_cards(from_id)[card_index]
+    giver_id = trade["from_id"]
+    card_name = trade["card_name"]
 
-    # Remove card from sender, add to recipient
-    await remove_card_by_obj(from_id, card)
-    await add_card(uid_to, card)
+    # check giver still has the card
+    giver_cards = get_cards(giver_id)
+    card = next((c for c in giver_cards if c["name"] == card_name), None)
+    if not card:
+        await ctx.send("❌ The card is no longer available from the giver.")
+        pending_trades.pop(recipient_id, None)
+        return
 
-    from_user = ctx.guild.get_member(from_id)
-    await ctx.send(f"✅ {ctx.author.mention} accepted the trade! **{card['name']}** has been transferred from {from_user.display_name}.")
+    # transfer card
+    await remove_card_by_obj(giver_id, card)
+    await add_card(recipient_id, card)
+    pending_trades.pop(recipient_id, None)
+    await send_embed(ctx, "🎉 Trade Complete", f"{ctx.author.mention} received **{card['name']}** from <@{giver_id}>")
 
+# ---------------- SHOW ALL CARDS ----------------
 @bot.command()
-async def decline(ctx, from_id: int):
-    uid_to = ctx.author.id
-    trade_key = (from_id, uid_to)
-
-    if trade_key not in active_trades:
-        await ctx.send("❌ No trade offer from that user.")
-        return
-
-    active_trades.pop(trade_key)
-    from_user = ctx.guild.get_member(from_id)
-    await ctx.send(f"❌ {ctx.author.mention} declined the trade from {from_user.display_name}.")
+async def cards(ctx):
+    """Show all obtainable cards."""
+    lines = [f"**{c['name']}** — ATK:{c['atk']} DEF:{c['def']}" for c in CARD_POOL]
+    await send_embed(ctx, "🃏 Obtainable Cards", "\n".join(lines), discord.Color.blue())
 
 # ---------------- ADMIN CARD GIVE ----------------
 from discord.ext import commands
