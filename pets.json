@@ -1,0 +1,52 @@
+{
+  "917555980101894255": [
+    {
+      "name": "Mystic Phoenix",
+      "rarity": "Epic"
+    },
+    {
+      "name": "Lightning Dragonling",
+      "rarity": "Rare"
+    }
+  ],
+  "1326199582991974502": [
+    {
+      "name": "Mini Fire Elemental",
+      "rarity": "Common"
+    },
+    {
+      "name": "Water Sprite",
+      "rarity": "Common"
+    },
+    {
+      "name": "Water Sprite",
+      "rarity": "Common"
+    },
+    {
+      "name": "Water Sprite",
+      "rarity": "Common"
+    },
+    {
+      "name": "Wind Hawk",
+      "rarity": "Uncommon",
+      "bonus": 10
+    },
+    {
+      "name": "Mini Fire Elemental",
+      "rarity": "Common",
+      "bonus": 5
+    },
+    {
+      "name": "Mini Fire Elemental",
+      "rarity": "Common",
+      "bonus": 5
+    }
+  ],
+  "1037273083360317440": [
+    {
+      "name": "Lightning Dragonling",
+      "rarity": "Rare",
+      "bonus": 15
+    }
+  ]
+}
