@@ -654,13 +654,21 @@ class AdvancedBattleView(View):
 @commands.has_permissions(administrator=True)
 async def remove(ctx, user: discord.Member, amount: int):
     if amount <= 0:
-        await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
+        await ctx.send("❌ Amount must be greater than 0")
         return
-    bal = get_balance(user.id)
-    if amount > bal:
-        amount = bal  # prevent negative balance
-    add_balance(user.id, -amount)
-    await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
+
+    user_id = str(user.id)
+    current = balances.get(user_id, 0)
+
+    if current <= 0:
+        await ctx.send(f"❌ {user.display_name} has no balance to remove")
+        return
+
+    remove_amt = min(amount, current)
+    balances[user_id] = current - remove_amt
+    save_json(BALANCES_FILE, balances)
+    await ctx.send(f"✅ Removed **${remove_amt}** from {user.display_name}. New balance: **${balances[user_id]}**")
+
 
 @bot.command()
 async def leaderboard(ctx, top:int=10):
