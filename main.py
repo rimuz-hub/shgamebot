@@ -137,100 +137,6 @@ from discord.ui import View, Button
 import discord
 import random
 
-# -----------------------------
-# CardBattle 1v1 Turn-based
-# -----------------------------
-class CardBattleButton(Button):
-    def __init__(self, action, card_index):
-        super().__init__(label=action, style=discord.ButtonStyle.primary)
-        self.action = action
-        self.card_index = card_index
-
-    async def callback(self, interaction: discord.Interaction):
-        gv = self.view
-        if interaction.user != gv.current:
-            await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
-            return
-
-        # Get attacking and defending player
-        opponent = gv.p2 if gv.current == gv.p1 else gv.p1
-        attacker_card = gv.cards[gv.current.id][self.card_index]
-
-        # Select target card (first alive)
-        defender_cards = [c for c in gv.cards[opponent.id] if c['hp'] > 0]
-        if not defender_cards:
-            await interaction.response.edit_message(content=f"🎉 {gv.current.mention} wins! All opponent cards defeated.", view=None)
-            gv.stop()
-            return
-        defender_card = defender_cards[0]
-
-        # Action logic
-        if self.action == "Attack":
-            total_def = defender_card['def'] + defender_card.get('temp_def', 0)
-            damage = max(attacker_card['atk'] - total_def, 0)
-            defender_card['hp'] = max(defender_card['hp'] - damage, 0)
-            action_msg = f"💥 {gv.current.display_name}'s {attacker_card['name']} attacked {opponent.display_name}'s {defender_card['name']} for {damage} damage!"
-            # Reset temporary defense after absorbing one attack
-            defender_card['temp_def'] = 0
-        else:  # Defend
-            attacker_card['temp_def'] = 5  # +5 DEF for next attack only
-            action_msg = f"🛡️ {gv.current.display_name}'s {attacker_card['name']} defended (+5 DEF for 1 turn)!"
-
-        # Check if opponent lost all cards
-        if all(c['hp'] <= 0 for c in gv.cards[opponent.id]):
-            await interaction.response.edit_message(content=f"{action_msg}\n🎉 {gv.current.mention} wins! All opponent cards defeated.", view=None)
-            gv.stop()
-            return
-
-        # Switch turn
-        gv.current = opponent
-        await gv.update_message(interaction, action_msg)
-
-class CardBattleView(View):
-    def __init__(self, p1, p2):
-        super().__init__(timeout=300)
-        self.p1 = p1
-        self.p2 = p2
-        self.current = p1
-        # Initialize cards
-        self.cards = {}
-        for player in [p1, p2]:
-            self.cards[player.id] = [
-                {"name": f"Card {i+1}", "atk": random.randint(10,25), "def": random.randint(5,15), "hp": random.randint(30,50), "temp_def":0}
-                for i in range(3)
-            ]
-        # Buttons for each card and action
-        for idx in range(3):
-            self.add_item(CardBattleButton("Attack", idx))
-            self.add_item(CardBattleButton("Defend", idx))
-        self.msg = None
-
-    async def update_message(self, interaction, action_msg):
-        embed = discord.Embed(title="🃏 CardBattle 1v1", color=discord.Color.green())
-        for player in [self.p1, self.p2]:
-            desc = ""
-            for c in self.cards[player.id]:
-                desc += f"{c['name']}: HP {c['hp']} | ATK {c['atk']} | DEF {c['def']} (+{c.get('temp_def',0)})\n"
-            embed.add_field(name=player.display_name, value=desc, inline=False)
-        embed.set_footer(text=f"Turn: {self.current.display_name}")
-        await interaction.response.edit_message(content=action_msg, embed=embed, view=self)
-
-# Command
-@bot.command()
-async def cardbattle(ctx, opponent: discord.Member):
-    if opponent == ctx.author:
-        await ctx.send("❌ Cannot battle yourself!")
-        return
-    view = CardBattleView(ctx.author, opponent)
-    embed = discord.Embed(title="🃏 CardBattle 1v1", color=discord.Color.green())
-    for player in [ctx.author, opponent]:
-        desc = ""
-        for c in view.cards[player.id]:
-            desc += f"{c['name']}: HP {c['hp']} | ATK {c['atk']} | DEF {c['def']}\n"
-        embed.add_field(name=player.display_name, value=desc, inline=False)
-    embed.set_footer(text=f"Turn: {view.current.display_name}")
-    msg = await ctx.send(embed=embed, view=view)
-    view.msg = msg
 
 
 
@@ -480,74 +386,64 @@ async def blackjack(ctx, opponent: discord.Member, bet: int):
     await view.send_hands()
 
 # -----------------------------
-# Cards & Pets
+# Card System
 # -----------------------------
-CARD_POOL=[
-    {"name":"Fire Elemental","attack":50,"defense":20},
-    {"name":"Water Spirit","attack":30,"defense":40},
-    {"name":"Earth Golem","attack":20,"defense":50},
-    {"name":"Wind Falcon","attack":40,"defense":30},
-    {"name":"Lightning Dragon","attack":60,"defense":10}
+CARD_POOL = [
+    {"name":"Fire Elemental","atk":50,"def":20},
+    {"name":"Water Spirit","atk":30,"def":40},
+    {"name":"Earth Golem","atk":20,"def":50},
+    {"name":"Wind Falcon","atk":40,"def":30},
+    {"name":"Lightning Dragon","atk":60,"def":10},
+    {"name":"Shadow Assassin","atk":55,"def":25},
+    {"name":"Holy Knight","atk":35,"def":50},
+    {"name":"Ice Wizard","atk":45,"def":30},
+    {"name":"Thunder Titan","atk":70,"def":20},
+    {"name":"Nature Dryad","atk":25,"def":45},
+    {"name":"Fire Phoenix","atk":65,"def":25},
+    {"name":"Dark Reaper","atk":60,"def":15},
+    {"name":"Crystal Guardian","atk":40,"def":40},
 ]
 
-PET_POOL=[
-    {"name":"Mini Fire Elemental","rarity":"Common","bonus":5},
-    {"name":"Water Sprite","rarity":"Common","bonus":5},
-    {"name":"Earth Pup","rarity":"Uncommon","bonus":10},
-    {"name":"Wind Hawk","rarity":"Uncommon","bonus":10},
-    {"name":"Lightning Dragonling","rarity":"Rare","bonus":15},
-    {"name":"Mystic Phoenix","rarity":"Epic","bonus":25}
-]
-
-current_pet=None
+# Cooldown for drawing cards
+card_cd = {}
 
 @bot.command()
 async def drawcard(ctx):
-    now=asyncio.get_event_loop().time()
-    if ctx.author.id in card_cd and now-card_cd[ctx.author.id]<300:
-        rem=int(300-(now-card_cd[ctx.author.id]))
-        await ctx.send(f"⏳ Wait {rem//60}m {rem%60}s")
+    now = asyncio.get_event_loop().time()
+    if ctx.author.id in card_cd and now - card_cd[ctx.author.id] < 300:
+        rem = int(300 - (now - card_cd[ctx.author.id]))
+        await ctx.send(f"⏳ Wait {rem//60}m {rem%60}s before drawing another card")
         return
-    card=random.choice(CARD_POOL)
-    add_card(ctx.author.id,card)
-    card_cd[ctx.author.id]=now
-    await send_embed(ctx,"🃏 You drew a card!",f"{card['name']}\nATK:{card['attack']} DEF:{card['defense']}",discord.Color.purple())
+    card = random.choice(CARD_POOL)
+    add_card(ctx.author.id, card)
+    card_cd[ctx.author.id] = now
+    await send_embed(ctx, "🃏 Card Drawn!", f"{card['name']}\nATK: {card['atk']} DEF: {card['def']}", discord.Color.purple())
 
 @bot.command()
 async def mycards(ctx):
-    user_cards=get_cards(ctx.author.id)
+    user_cards = get_cards(ctx.author.id)
     if not user_cards:
-        await ctx.send("❌ No cards yet")
+        await ctx.send("❌ You have no cards yet!")
         return
-    desc=""
-    for i,c in enumerate(user_cards,1):
-        desc+=f"{i}. {c['name']} ATK:{c['attack']} DEF:{c['defense']}\n"
-    await send_embed(ctx,f"{ctx.author.display_name}'s Cards",desc,discord.Color.blue())
+    desc = ""
+    for i, c in enumerate(user_cards, 1):
+        desc += f"{i}. {c['name']} | ATK: {c['atk']} DEF: {c['def']}\n"
+    await send_embed(ctx, f"{ctx.author.display_name}'s Cards", desc, discord.Color.blue())
 
 @bot.command()
-async def mypets(ctx):
-    user_pets=get_pets(ctx.author.id)
-    if not user_pets:
-        await ctx.send("❌ No pets yet")
+async def sellcard(ctx, *, cardname: str):
+    user_cards = get_cards(ctx.author.id)
+    card = next((c for c in user_cards if c['name'].lower() == cardname.lower()), None)
+    if not card:
+        await ctx.send(f"❌ You don't have a card named '{cardname}'")
         return
-    desc=""
-    for i,p in enumerate(user_pets,1):
-        desc+=f"{i}. {p['name']} ({p['rarity']}) Bonus:{p['bonus']}\n"
-    await send_embed(ctx,f"{ctx.author.display_name}'s Pets",desc,discord.Color.orange())
+    sell_price = (card['atk'] + card['def']) // 2
+    user_cards.remove(card)
+    cards_data[str(ctx.author.id)] = user_cards
+    save_json(CARDS_FILE, cards_data)
+    add_balance(ctx.author.id, sell_price)
+    await ctx.send(f"💰 Sold **{card['name']}** for **${sell_price}**")
 
-@bot.command()
-async def collect(ctx):
-    global current_pet
-    now=asyncio.get_event_loop().time()
-    if ctx.author.id in pet_cd and now-pet_cd[ctx.author.id]<300:
-        await ctx.send("⏳ Wait 5 minutes to collect another pet")
-        return
-    if not current_pet:
-        current_pet=random.choice(PET_POOL)
-    add_pet(ctx.author.id,current_pet)
-    await ctx.send(f"🎉 {ctx.author.mention} collected **{current_pet['name']}** ({current_pet['rarity']})")
-    pet_cd[ctx.author.id]=now
-    current_pet=None
 
 from discord.ui import View, Button
 import discord
