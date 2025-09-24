@@ -179,8 +179,17 @@ async def pay(ctx, member: discord.Member, amount: int):
     await add_balance(member.id, amount)
     await send_embed(ctx, "💸 Payment", f"{ctx.author.mention} paid **${amount}** to {member.mention}")
 
+# Role-based check by role ID
+ADMIN_ROLE_ID = 1343891987350294631
+
+def has_admin_role():
+    def predicate(ctx):
+        return any(role.id == ADMIN_ROLE_ID for role in ctx.author.roles)
+    return commands.check(predicate)
+
+# ---------------- ADMIN ECONOMY COMMANDS ----------------
 @bot.command()
-@has_role("Admin")  # only members with "Admin" role can use this
+@has_admin_role()
 async def give(ctx, member: discord.Member, amount: int):
     if amount <= 0:
         await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
@@ -189,14 +198,14 @@ async def give(ctx, member: discord.Member, amount: int):
     await send_embed(ctx, "💰 Admin Give", f"{ctx.author.mention} gave **${amount}** to {member.mention}")
 
 @bot.command()
-@has_role("Admin")
+@has_admin_role()
 async def remove(ctx, user: discord.Member, amount: int):
     if amount <= 0:
         await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
         return
     bal = get_balance(user.id)
     if amount > bal:
-        amount = bal
+        amount = bal  # prevent negative balance
     await add_balance(user.id, -amount)
     await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
 
