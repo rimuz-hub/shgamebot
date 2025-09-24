@@ -663,6 +663,27 @@ async def remove(ctx, user: discord.Member, amount: int):
     await send_embed(ctx, "💸 Admin Remove", f"{ctx.author.mention} removed **${amount}** from {user.mention}")
 `
 
+@bot.command()
+async def leaderboard(ctx, top:int=10):
+    """Show top users by balance."""
+    if not balances:
+        await ctx.send("No data available.")
+        return
+
+    # Sort balances descending
+    sorted_bal = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:top]
+
+    desc = ""
+    for i, (user_id, bal) in enumerate(sorted_bal, start=1):
+        user = ctx.guild.get_member(int(user_id))
+        if user:
+            desc += f"**{i}. {user.display_name}** - ${bal}\n"
+        else:
+            desc += f"**{i}. Unknown User ({user_id})** - ${bal}\n"
+
+    embed = discord.Embed(title=f"💰 Top {top} Balances", description=desc, color=discord.Color.gold())
+    await ctx.send(embed=embed)
+
 # command to start a card battle
 @bot.command()
 async def cardbattle(ctx, opponent: discord.Member):
