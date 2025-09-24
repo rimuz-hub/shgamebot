@@ -180,7 +180,7 @@ async def pay(ctx, member: discord.Member, amount: int):
     await send_embed(ctx, "💸 Payment", f"{ctx.author.mention} paid **${amount}** to {member.mention}")
 
 @bot.command()
-@commands.has_guild_permissions(manage_guild=True)
+@commands.has_guild_permissions(administrator=True)
 async def give(ctx, member: discord.Member, amount: int):
     if amount <= 0:
         await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red()); return
@@ -651,7 +651,7 @@ class AdvancedBattleView(View):
         await interaction.response.edit_message(embed=embed, view=self)
 
 @bot.command()
-@commands.has_permissions(manage_guild=True)
+@commands.has_permissions(administrator=True)
 async def remove(ctx, user: discord.Member, amount: int):
     if amount <= 0:
         await send_embed(ctx, "❌ Error", "Amount must be >0", discord.Color.red())
