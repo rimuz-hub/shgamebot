@@ -386,63 +386,122 @@ async def blackjack(ctx, opponent: discord.Member, bet: int):
     await view.send_hands()
 
 # -----------------------------
-# Card System
-# -----------------------------
+import discord
+from discord.ext import commands
+from discord.ui import View, Button
+import random, os, json, asyncio
+
+# ----------------- STORAGE -----------------
+CARDS_FILE = "cards.json"
+
+def load_json(file):
+    if os.path.exists(file):
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+cards_data = load_json(CARDS_FILE)
+
+def get_cards(user_id):
+    return cards_data.get(str(user_id), [])
+
+def add_card(user_id, card):
+    user_cards = get_cards(user_id)
+    user_cards.append(card)
+    cards_data[str(user_id)] = user_cards
+    save_json(CARDS_FILE, cards_data)
+
+def remove_card(user_id, card):
+    user_cards = get_cards(user_id)
+    if card in user_cards:
+        user_cards.remove(card)
+        cards_data[str(user_id)] = user_cards
+        save_json(CARDS_FILE, cards_data)
+
+# ----------------- CARD POOL -----------------
 CARD_POOL = [
-    {"name":"Fire Elemental","atk":50,"def":20},
-    {"name":"Water Spirit","atk":30,"def":40},
-    {"name":"Earth Golem","atk":20,"def":50},
-    {"name":"Wind Falcon","atk":40,"def":30},
-    {"name":"Lightning Dragon","atk":60,"def":10},
-    {"name":"Shadow Assassin","atk":55,"def":25},
-    {"name":"Holy Knight","atk":35,"def":50},
-    {"name":"Ice Wizard","atk":45,"def":30},
-    {"name":"Thunder Titan","atk":70,"def":20},
-    {"name":"Nature Dryad","atk":25,"def":45},
-    {"name":"Fire Phoenix","atk":65,"def":25},
-    {"name":"Dark Reaper","atk":60,"def":15},
-    {"name":"Crystal Guardian","atk":40,"def":40},
+    {"name":"Fire Elemental","atk":50,"def":20,"hp":120},
+    {"name":"Water Spirit","atk":30,"def":40,"hp":130},
+    {"name":"Earth Golem","atk":20,"def":50,"hp":150},
+    {"name":"Wind Falcon","atk":40,"def":30,"hp":110},
+    {"name":"Lightning Dragon","atk":60,"def":10,"hp":100},
+    {"name":"Shadow Assassin","atk":55,"def":15,"hp":90},
+    {"name":"Holy Knight","atk":35,"def":45,"hp":140},
+    {"name":"Frost Giant","atk":25,"def":55,"hp":160},
+    {"name":"Phoenix","atk":45,"def":25,"hp":120},
+    {"name":"Dark Sorcerer","atk":70,"def":5,"hp":80}
 ]
 
-# Cooldown for drawing cards
-card_cd = {}
-
-@bot.command()
+# ----------------- COMMANDS -----------------
+@commands.command()
 async def drawcard(ctx):
+    """Draw a random card (5 min cooldown)."""
     now = asyncio.get_event_loop().time()
-    if ctx.author.id in card_cd and now - card_cd[ctx.author.id] < 300:
-        rem = int(300 - (now - card_cd[ctx.author.id]))
-        await ctx.send(f"⏳ Wait {rem//60}m {rem%60}s before drawing another card")
-        return
+    if hasattr(ctx.bot, "card_cd") and ctx.author.id in ctx.bot.card_cd:
+        last = ctx.bot.card_cd[ctx.author.id]
+        if now - last < 300:
+            rem = int(300 - (now - last))
+            await ctx.send(f"⏳ Wait {rem//60}m {rem%60}s before drawing again")
+            return
     card = random.choice(CARD_POOL)
-    add_card(ctx.author.id, card)
-    card_cd[ctx.author.id] = now
-    await send_embed(ctx, "🃏 Card Drawn!", f"{card['name']}\nATK: {card['atk']} DEF: {card['def']}", discord.Color.purple())
+    add_card(ctx.author.id, card.copy())
+    ctx.bot.card_cd = getattr(ctx.bot, "card_cd", {})
+    ctx.bot.card_cd[ctx.author.id] = now
+    await ctx.send(f"🃏 You drew **{card['name']}** (ATK:{card['atk']} DEF:{card['def']} HP:{card['hp']})")
 
-@bot.command()
+@commands.command()
 async def mycards(ctx):
+    """View your collected cards."""
     user_cards = get_cards(ctx.author.id)
     if not user_cards:
-        await ctx.send("❌ You have no cards yet!")
+        await ctx.send("❌ You don't have any cards yet!")
         return
-    desc = ""
-    for i, c in enumerate(user_cards, 1):
-        desc += f"{i}. {c['name']} | ATK: {c['atk']} DEF: {c['def']}\n"
-    await send_embed(ctx, f"{ctx.author.display_name}'s Cards", desc, discord.Color.blue())
+    desc = "\n".join([f"{i+1}. {c['name']} | ATK:{c['atk']} DEF:{c['def']} HP:{c['hp']}" for i,c in enumerate(user_cards)])
+    embed = discord.Embed(title=f"{ctx.author.display_name}'s Cards", description=desc, color=discord.Color.blue())
+    await ctx.send(embed=embed)
 
-@bot.command()
-async def sellcard(ctx, *, cardname: str):
+@commands.command()
+async def sellcard(ctx, *, cardname:str):
+    """Sell one of your cards for currency (half stats)."""
     user_cards = get_cards(ctx.author.id)
     card = next((c for c in user_cards if c['name'].lower() == cardname.lower()), None)
     if not card:
         await ctx.send(f"❌ You don't have a card named '{cardname}'")
         return
-    sell_price = (card['atk'] + card['def']) // 2
-    user_cards.remove(card)
-    cards_data[str(ctx.author.id)] = user_cards
-    save_json(CARDS_FILE, cards_data)
-    add_balance(ctx.author.id, sell_price)
+    sell_price = (card['atk'] + card['def'] + card['hp']//10) // 2
+    remove_card(ctx.author.id, card)
+    # NOTE: integrate add_balance if using economy
     await ctx.send(f"💰 Sold **{card['name']}** for **${sell_price}**")
+
+# ----------------- BATTLE SYSTEM -----------------
+class CardActionButton(Button):
+    def __init__(self, label, action, game_view):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.action = action
+        self.game_view = game_view
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.game_view.current:
+            await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
+            return
+
+        attacker = self.game_view.current
+        defender = self.game_view.p2 if attacker == self.game_view.p1 else self.game_view.p1
+
+        attacker_card = self.game_view.cards[attacker.id][self.game_view.active_index[attacker.id]]
+        defender_card = self.game_view.cards[defender.id][self.game_view.active_index[defender.id]]
+
+        if self.action == "Attack":
+            damage = max(attacker_card['atk'] - defender_card['def']//2, 5)
+            defender_card['hp'] = max(defender_card['hp'] - damage, 0)
+            desc = f"{attacker.mention}'s **{attacker_card['name']}** attacked {defender.mention}'s **{defender_card['name']}** for {damage} dmg!"
 
 
 from discord.ui import View, Button
