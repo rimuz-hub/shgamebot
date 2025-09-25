@@ -587,8 +587,6 @@ user_cards = {}   # {user_id: [{"name":..., "attack":..., "defense":..., "hp":..
 user_rings = {}   # {user_id: [{"name":..., "bonus":{...}}, ...]}
 user_decks = {}   # {user_id: [cardname1, cardname2, ...]}
 
-bot = commands.Bot(command_prefix="?")
-
 # ----- CARD + RING COMMANDS -----
 
 @bot.command()
@@ -772,9 +770,6 @@ class TargetButton(Button):
         if def_card["hp"] <= 0:
             view.log.append(f"❌ {defender.display_name}'s **{def_card['name']}** was defeated!")
         await view.end_turn(interaction)
-
-intents = discord.Intents.default()
-intents.message_content = True
 
 class AdvancedBattleView(View):
     def __init__(self, ctx, p1:discord.Member, p2:discord.Member, cards_each:int=3):
