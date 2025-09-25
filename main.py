@@ -773,6 +773,9 @@ class TargetButton(Button):
             view.log.append(f"❌ {defender.display_name}'s **{def_card['name']}** was defeated!")
         await view.end_turn(interaction)
 
+intents = discord.Intents.default()
+intents.message_content = True
+
 class AdvancedBattleView(View):
     def __init__(self, ctx, p1:discord.Member, p2:discord.Member, cards_each:int=3):
         super().__init__(timeout=300)
