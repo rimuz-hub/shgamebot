@@ -566,6 +566,111 @@ async def mycards(ctx):
     lines = [f"{i+1}. {c['name']} — ATK:{c['atk']} DEF:{c['def']} HP:{c.get('hp','?')}" for i,c in enumerate(arr)]
     await send_embed(ctx, f"{ctx.author.display_name}'s Cards", "\n".join(lines), discord.Color.blue())
 
+import random
+from discord.ext import commands
+
+# Example card pool
+CARD_POOL = [
+    {"name": "Knight", "attack": 30, "defense": 10, "hp": 100},
+    {"name": "Archer", "attack": 25, "defense": 5, "hp": 80},
+    {"name": "Mage", "attack": 40, "defense": 3, "hp": 70},
+]
+
+# Example ring pool
+RING_POOL = [
+    {"name": "Ring of Defense", "bonus": {"defense": 20}},
+    {"name": "Ring of Power", "bonus": {"attack": 15}},
+    {"name": "Ring of Vitality", "bonus": {"hp": 30}},
+]
+
+user_cards = {}   # {user_id: [{"name":..., "attack":..., "defense":..., "hp":..., "ring":...}, ...]}
+user_rings = {}   # {user_id: [{"name":..., "bonus":{...}}, ...]}
+user_decks = {}   # {user_id: [cardname1, cardname2, ...]}
+
+bot = commands.Bot(command_prefix="?")
+
+# ----- CARD + RING COMMANDS -----
+
+@bot.command()
+async def drawring(ctx):
+    """Draw a random ring"""
+    ring = random.choice(RING_POOL)
+    user_rings.setdefault(ctx.author.id, []).append(ring)
+    await ctx.send(f"💍 {ctx.author.mention} obtained **{ring['name']}**!")
+
+@bot.command()
+async def myrings(ctx):
+    """Show all your rings"""
+    rings = user_rings.get(ctx.author.id, [])
+    if not rings:
+        await ctx.send("You don't have any rings yet.")
+        return
+    ring_list = "\n".join([r['name'] for r in rings])
+    await ctx.send(f"💍 **Your Rings:**\n{ring_list}")
+
+@bot.command()
+async def equipring(ctx, cardname: str, *, ringname: str):
+    """Equip a ring to one of your cards"""
+    cards = user_cards.get(ctx.author.id, [])
+    rings = user_rings.get(ctx.author.id, [])
+
+    card = next((c for c in cards if c['name'].lower() == cardname.lower()), None)
+    ring = next((r for r in rings if r['name'].lower() == ringname.lower()), None)
+
+    if not card:
+        await ctx.send("❌ You don’t own that card.")
+        return
+    if not ring:
+        await ctx.send("❌ You don’t own that ring.")
+        return
+
+    # Equip ring
+    card['ring'] = ring
+    rings.remove(ring)  # remove from inventory once equipped
+
+    await ctx.send(f"✅ Equipped **{ring['name']}** to **{card['name']}**!")
+
+@bot.command()
+async def mycards(ctx):
+    """Show all your cards with equipped rings"""
+    cards = user_cards.get(ctx.author.id, [])
+    if not cards:
+        await ctx.send("You don't have any cards yet.")
+        return
+    msg = "🃏 **Your Cards:**\n"
+    for c in cards:
+        ring_text = f" (Ring: {c['ring']['name']})" if 'ring' in c else ""
+        msg += f"- {c['name']} (ATK {c['attack']} DEF {c['defense']} HP {c['hp']}){ring_text}\n"
+    await ctx.send(msg)
+
+# ----- DECK COMMANDS -----
+
+@bot.command()
+async def setdeck(ctx, *, cardnames: str):
+    """Set your battle deck (up to 5 cards)"""
+    names = [n.strip() for n in cardnames.split(",")]
+    cards = user_cards.get(ctx.author.id, [])
+
+    owned_names = [c['name'].lower() for c in cards]
+    valid_names = [n for n in names if n.lower() in owned_names]
+
+    if not valid_names:
+        await ctx.send("❌ None of those cards are in your collection.")
+        return
+
+    user_decks[ctx.author.id] = valid_names[:5]  # max 5 cards
+    await ctx.send(f"✅ Deck set to: {', '.join(valid_names[:5])}")
+
+@bot.command()
+async def mydeck(ctx):
+    """Show your current battle deck"""
+    deck = user_decks.get(ctx.author.id, [])
+    if not deck:
+        await ctx.send("You don’t have a deck set yet. Use `?setdeck`.")
+        return
+    await ctx.send(f"🎴 **Your Deck:** {', '.join(deck)}")
+
+
 @bot.command()
 async def sellcard(ctx, *, cardname: str):
     arr = get_cards(ctx.author.id)
