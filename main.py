@@ -301,6 +301,209 @@ def winner(b, m):
     return any(b[a]==b[b_]==b[c]==m for a,b_,c in lines)
 
 # ------------------------------
+# SHOP COMMANDS
+# ------------------------------
+SHOP_ITEMS = {
+    "card": {"desc": "Draw a random card"},
+    "ring": {"desc": "Equip a ring to a card"},
+    "car": {"desc": "Collect a random car"}
+}
+
+@bot.command()
+async def shop(ctx):
+    msg = "🛒 **Shop:**\n"
+    for item, data in SHOP_ITEMS.items():
+        msg += f"{item.capitalize()} - {data['desc']}\n"
+    await ctx.send(msg)
+
+@bot.command()
+async def buy(ctx, item: str):
+    item = item.lower()
+    if item not in SHOP_ITEMS:
+        await ctx.send("Item not found!")
+        return
+    user = get_user(ctx.author.id)
+    if item == "card":
+        card = random.choice(CARD_POOL)
+        user["cards"].append({"name": card, "ring": None})
+        await ctx.send(f"You got a card: {card}")
+    elif item == "ring":
+        ring = random.choice(RINGS_POOL)
+        await ctx.send(f"You got a ring: {ring} (equip it with a card using ?equip)")
+    elif item == "car":
+        car = random.choice(CARS_POOL)
+        if car not in user["cars"]:
+            user["cars"].append(car)
+            await ctx.send(f"You got a new car: {car}")
+        else:
+            await ctx.send(f"You already have {car}")
+    update_user(ctx.author.id, user)
+
+# ------------------------------
+# MULTIPLAYER ROCK-PAPER-SCISSORS
+# ------------------------------
+rps_games = {}
+
+@bot.command()
+async def rps_start(ctx, opponent: discord.Member):
+    if ctx.author.id in rps_games or opponent.id in rps_games:
+        await ctx.send("One of the players is already in a game!")
+        return
+    rps_games[ctx.author.id] = {"opponent": opponent.id, "choices": {}}
+    rps_games[opponent.id] = {"opponent": ctx.author.id, "choices": {}}
+    await ctx.send(f"{ctx.author.mention} has challenged {opponent.mention} to Rock-Paper-Scissors! Both players, DM me your choice with `?rps_play <rock/paper/scissors>`.")
+
+@bot.command()
+async def rps_play(ctx, choice: str):
+    choice = choice.lower()
+    if ctx.author.id not in rps_games:
+        await ctx.send("You are not in a game!")
+        return
+    if choice not in ["rock", "paper", "scissors"]:
+        await ctx.send("Invalid choice! Use rock, paper, or scissors.")
+        return
+
+    game = rps_games[ctx.author.id]
+    game["choices"][ctx.author.id] = choice
+
+    if len(game["choices"]) < 2:
+        await ctx.send("Choice registered! Waiting for the opponent...")
+        return
+
+    p1 = ctx.author.id
+    p2 = game["opponent"]
+    choice1 = game["choices"][p1]
+    choice2 = game["choices"][p2]
+
+    if choice1 == choice2:
+        result = "It's a tie!"
+    elif (choice1 == "rock" and choice2 == "scissors") or \
+         (choice1 == "paper" and choice2 == "rock") or \
+         (choice1 == "scissors" and choice2 == "paper"):
+        result = f"<@{p1}> wins!"
+    else:
+        result = f"<@{p2}> wins!"
+
+    await ctx.send(f"Results:\n<@{p1}> chose **{choice1}**\n<@{p2}> chose **{choice2}**\n{result}")
+
+    del rps_games[p1]
+    del rps_games[p2]
+
+# ------------------------------
+# ADMIN ECONOMY/ITEM MANAGEMENT BY ROLE
+# ------------------------------
+def has_economy_role():
+    async def predicate(ctx):
+        role = discord.utils.get(ctx.author.roles, id=1343891987350294631)
+        return role is not None
+    return commands.check(predicate)
+
+@bot.command()
+@has_economy_role()
+async def givecoins(ctx, member: discord.Member, amount: int):
+    user = get_user(member.id)
+    user["balance"] += amount
+    update_user(member.id, user)
+    await ctx.send(f"Gave {amount} coins to {member.mention}. New balance: {user['balance']}")
+
+@bot.command()
+@has_economy_role()
+async def removecoins(ctx, member: discord.Member, amount: int):
+    user = get_user(member.id)
+    if amount > user["balance"]:
+        user["balance"] = 0
+    else:
+        user["balance"] -= amount
+    update_user(member.id, user)
+    await ctx.send(f"Removed {amount} coins from {member.mention}. New balance: {user['balance']}")
+
+@givecoins.error
+@removecoins.error
+async def coins_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ You do not have the required role to use this command.")
+
+# ------------------------------
+# GIVE / REMOVE ITEMS
+# ------------------------------
+@bot.command()
+@has_economy_role()
+async def givecard(ctx, member: discord.Member, *, card_name: str):
+    user = get_user(member.id)
+    user["cards"].append({"name": card_name, "ring": None})
+    update_user(member.id, user)
+    await ctx.send(f"Gave card '{card_name}' to {member.mention}.")
+
+@bot.command()
+@has_economy_role()
+async def givecar(ctx, member: discord.Member, *, car_name: str):
+    user = get_user(member.id)
+    if car_name not in user["cars"]:
+        user["cars"].append(car_name)
+        update_user(member.id, user)
+        await ctx.send(f"Gave car '{car_name}' to {member.mention}.")
+    else:
+        await ctx.send(f"{member.mention} already has '{car_name}'.")
+
+@bot.command()
+@has_economy_role()
+async def givering(ctx, member: discord.Member, card_index: int, *, ring_name: str):
+    user = get_user(member.id)
+    if card_index < 0 or card_index >= len(user["cards"]):
+        await ctx.send("Invalid card index!")
+        return
+    user["cards"][card_index]["ring"] = ring_name
+    update_user(member.id, user)
+    await ctx.send(f"Equipped ring '{ring_name}' to {user['cards'][card_index]['name']} for {member.mention}.")
+
+@bot.command()
+@has_economy_role()
+async def removecard(ctx, member: discord.Member, card_index: int):
+    user = get_user(member.id)
+    if 0 <= card_index < len(user["cards"]):
+        removed = user["cards"].pop(card_index)
+        update_user(member.id, user)
+        await ctx.send(f"Removed card '{removed['name']}' from {member.mention}.")
+    else:
+        await ctx.send("Invalid card index!")
+
+@bot.command()
+@has_economy_role()
+async def removecar(ctx, member: discord.Member, *, car_name: str):
+    user = get_user(member.id)
+    if car_name in user["cars"]:
+        user["cars"].remove(car_name)
+        update_user(member.id, user)
+        await ctx.send(f"Removed car '{car_name}' from {member.mention}.")
+    else:
+        await ctx.send(f"{member.mention} does not have '{car_name}'.")
+
+@bot.command()
+@has_economy_role()
+async def removering(ctx, member: discord.Member, card_index: int):
+    user = get_user(member.id)
+    if 0 <= card_index < len(user["cards"]):
+        removed = user["cards"][card_index]["ring"]
+        user["cards"][card_index]["ring"] = None
+        update_user(member.id, user)
+        if removed:
+            await ctx.send(f"Removed ring '{removed}' from {user['cards'][card_index]['name']} for {member.mention}.")
+        else:
+            await ctx.send(f"No ring equipped on {user['cards'][card_index]['name']}.")
+    else:
+        await ctx.send("Invalid card index!")
+
+@givecard.error
+@givecar.error
+@givering.error
+@removecard.error
+@removecar.error
+@removering.error
+async def item_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ You do not have the required role to manage items.")
+
+# ------------------------------
 # LEADERBOARD
 # ------------------------------
 @bot.command()
@@ -320,6 +523,72 @@ async def leaderboard(ctx):
 @bot.command()
 async def invite(ctx):
     await ctx.send("Invite link: https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=8")
+
+# ------------------------------
+# CUSTOM COMMAND LIST (?cmds)
+# ------------------------------
+@bot.command(name="cmds")
+async def cmds(ctx):
+    msg = "**📜 Commands List:**\n\n"
+
+    # Economy
+    msg += "`?balance [user]` - Check balance\n"
+    msg += "`?work` - Earn coins\n"
+    msg += "`?daily` - Claim daily coins\n"
+    msg += "`?pay <user> <amount>` - Send coins\n\n"
+
+    # Mini-games
+    msg += "`?cf <user> [bet]` - Coinflip\n"
+    msg += "`?dice [bet]` - Dice roll\n"
+    msg += "`?slots [bet]` - Slots game\n"
+    msg += "`?roulette <bet> <red/black>` - Roulette\n"
+    msg += "`?tictactoe <user> [bet]` - TicTacToe with bet\n"
+    msg += "`?place <position>` - Place your mark in TicTacToe\n"
+    msg += "`?rps_start <user>` - Start Rock-Paper-Scissors\n"
+    msg += "`?rps_play <rock/paper/scissors>` - Play in RPS\n\n"
+
+    # Collection
+    msg += "`?collect` - Get a random car\n"
+    msg += "`?mycars` - List your cars\n"
+    msg += "`?draw` - Draw a card\n"
+    msg += "`?mycards` - List your cards\n"
+    msg += "`?equip <card_index> <ring_index>` - Equip ring to card\n\n"
+
+    # Shop
+    msg += "`?shop` - Show shop items\n"
+    msg += "`?buy <item>` - Buy item from shop\n\n"
+
+    # Admin economy/item commands (role restricted)
+    msg += "`?givecoins <user> <amount>` - Give coins\n"
+    msg += "`?removecoins <user> <amount>` - Remove coins\n"
+    msg += "`?givecard <user> <card_name>` - Give a card\n"
+    msg += "`?removecard <user> <card_index>` - Remove a card\n"
+    msg += "`?givecar <user> <car_name>` - Give a car\n"
+    msg += "`?removecar <user> <car_name>` - Remove a car\n"
+    msg += "`?givering <user> <card_index> <ring_name>` - Give a ring\n"
+    msg += "`?removering <user> <card_index>` - Remove a ring\n\n"
+
+    # Misc
+    msg += "`?leaderboard` - Show top users\n"
+    msg += "`?invite` - Invite link\n"
+
+    await ctx.send(msg)
+
+# ------------------------------
+# GLOBAL ERROR HANDLER
+# ------------------------------
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Missing argument: `{error.param}`")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send(f"❌ Invalid argument type. Please check your command.")
+    elif isinstance(error, commands.CommandNotFound):
+        await ctx.send("❌ Command not found. Type `?cmds` for a list of commands.")
+    elif isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ You do not have permission to use this command.")
+    else:
+        await ctx.send(f"❌ An error occurred: {error}")
 
 # ------------------------------
 # RUN BOT
